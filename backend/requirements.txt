@@ -1,4 +1,4 @@
 Flask==3.0.0
 flask-cors==4.0.0
-yt-dlp==2024.10.2
+yt-dlp>=2024.01.01
 Werkzeug==3.0.1
