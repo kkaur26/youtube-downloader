@@ -7,7 +7,8 @@ import json
 from pathlib import Path
 
 app = Flask(__name__)
-CORS(app)
+# Enable CORS for all routes
+CORS(app, resources={r"/*": {"origins": "*"}}, methods=['GET', 'POST', 'OPTIONS'])
 
 def extract_video_id(url):
     """Extract video ID from YouTube URL"""
@@ -53,11 +54,17 @@ def get_video_info(url):
 
     return None
 
-@app.route('/api/youtube/info', methods=['POST'])
+@app.route('/api/youtube/info', methods=['POST', 'OPTIONS'])
 def youtube_info():
     """Get YouTube video info"""
+    if request.method == 'OPTIONS':
+        return '', 204
+
     try:
         data = request.json
+        if not data:
+            return jsonify({'error': 'No JSON data provided'}), 400
+
         url = data.get('url')
 
         if not url:
@@ -84,14 +91,20 @@ def youtube_info():
         print(f"Error: {e}")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/youtube/download', methods=['POST'])
+@app.route('/api/youtube/download', methods=['POST', 'OPTIONS'])
 def youtube_download():
     """Download YouTube audio"""
+    if request.method == 'OPTIONS':
+        return '', 204
+
     temp_dir = None
     output_file = None
 
     try:
         data = request.json
+        if not data:
+            return jsonify({'error': 'No JSON data provided'}), 400
+
         url = data.get('url')
         quality = data.get('quality', 128)
         title = data.get('title', 'audio')
@@ -171,9 +184,15 @@ def youtube_download():
                 pass
 
 @app.route('/health', methods=['GET'])
+@app.route('/health/', methods=['GET'])
 def health():
     """Health check endpoint"""
     return jsonify({'status': 'ok', 'service': 'youtube-downloader-backend'})
+
+@app.route('/', methods=['GET'])
+def root():
+    """Root endpoint"""
+    return jsonify({'message': 'YouTube Downloader Backend', 'status': 'running'})
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))
