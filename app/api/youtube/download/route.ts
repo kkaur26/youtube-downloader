@@ -12,12 +12,17 @@ export async function POST(request: NextRequest) {
     const backendUrl = process.env.BACKEND_URL || 'https://youtube-downloader-backend-production.railway.app';
 
     // Call the Python backend to download
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes
+
     const response = await fetch(`${backendUrl}/api/youtube/download`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url, quality, title }),
-      timeout: 300000, // 5 minutes
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
