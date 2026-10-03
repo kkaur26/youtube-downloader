@@ -1,32 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import * as fs from 'fs';
-import * as path from 'path';
-
-const execAsync = promisify(exec);
-
-// Extract video ID from YouTube URL
-function extractVideoId(url: string): string | null {
-  const regexPatterns = [
-    /(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\n?#]+)/,
-    /youtube\.com\/embed\/([^&\n?#]+)/,
-    /youtube\.com\/v\/([^&\n?#]+)/,
-  ];
-
-  for (const regex of regexPatterns) {
-    const match = url.match(regex);
-    if (match?.[1]) {
-      return match[1];
-    }
-  }
-  return null;
-}
 
 export async function POST(request: NextRequest) {
-  let tempDir: string | null = null;
-  let outputFile: string | null = null;
-
   try {
     const { url, quality, title } = await request.json();
 
@@ -34,75 +8,42 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'URL is required' }, { status: 400 });
     }
 
-    const videoId = extractVideoId(url);
-    if (!videoId) {
-      return NextResponse.json({ error: 'Invalid YouTube URL' }, { status: 400 });
-    }
+    // Get backend URL from environment or use default Railway URL
+    const backendUrl = process.env.BACKEND_URL || 'https://youtube-downloader-backend-production.railway.app';
 
-    // Create temp directory for download
-    tempDir = path.join('/tmp', `yt-${Date.now()}`);
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir, { recursive: true });
-    }
-
-    // Safe filename
-    const safeTitle = title.replace(/[^a-z0-9]/gi, '_').substring(0, 50);
-    outputFile = path.join(tempDir, `${safeTitle}.m4a`);
-
-    console.log(`Downloading: ${url} to ${outputFile}`);
-
-    // Use yt-dlp to download audio
-    const command = `yt-dlp -f "ba" -x --audio-format m4a --audio-quality ${quality}K -o "${outputFile}" "${url}"`;
-
-    const { stdout, stderr } = await execAsync(command, {
-      timeout: 300000, // 5 minute timeout
-      maxBuffer: 10 * 1024 * 1024, // 10MB buffer
+    // Call the Python backend to download
+    const response = await fetch(`${backendUrl}/api/youtube/download`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, quality, title }),
+      timeout: 300000, // 5 minutes
     });
 
-    console.log('Download stdout:', stdout);
-    if (stderr) console.log('Download stderr:', stderr);
-
-    // Check if file was created
-    if (!fs.existsSync(outputFile)) {
-      throw new Error('Download failed - output file not created');
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Backend error: ${response.status}`);
     }
 
-    // Read the file
-    const fileBuffer = fs.readFileSync(outputFile);
-
-    // Clean up temp files
-    try {
-      fs.rmSync(tempDir, { recursive: true, force: true });
-    } catch (cleanupError) {
-      console.error('Cleanup error:', cleanupError);
-    }
+    // Get the audio file from backend
+    const blob = await response.blob();
 
     // Return the audio file
-    return new NextResponse(fileBuffer, {
+    return new NextResponse(blob, {
       status: 200,
       headers: {
         'Content-Type': 'audio/mp4',
-        'Content-Length': fileBuffer.length.toString(),
-        'Content-Disposition': `attachment; filename="${safeTitle}.m4a"`,
+        'Content-Length': blob.size.toString(),
+        'Content-Disposition': `attachment; filename="${title.replace(/[^a-z0-9]/gi, '_')}.m4a"`,
         'Cache-Control': 'no-cache, no-store',
       },
     });
   } catch (error) {
-    // Clean up on error
-    if (tempDir && fs.existsSync(tempDir)) {
-      try {
-        fs.rmSync(tempDir, { recursive: true, force: true });
-      } catch (e) {
-        console.error('Cleanup error:', e);
-      }
-    }
-
     console.error('Download error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
       {
         error: `Failed to download: ${errorMessage}`,
-        hint: 'Make sure the YouTube URL is valid and the video is accessible',
+        hint: 'Backend service may be starting up. Please try again in a few seconds.',
       },
       { status: 500 }
     );
