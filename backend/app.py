@@ -121,7 +121,7 @@ def youtube_download():
         safe_title = "".join(c if c.isalnum() else "_" for c in title)[:50]
         output_file = os.path.join(temp_dir, f'{safe_title}.m4a')
 
-        # Download using yt-dlp
+        # Download using yt-dlp with anti-bot bypass
         cmd = [
             'yt-dlp',
             '-f', 'ba',
@@ -130,6 +130,9 @@ def youtube_download():
             '--audio-quality', f'{quality}K',
             '-o', output_file,
             '--no-warnings',
+            '--extractor-args', 'youtube:player_client=web',
+            '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            '-S', 'res,ext:m4a:m4b',
             url
         ]
 
